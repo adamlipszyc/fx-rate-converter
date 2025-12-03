@@ -1,32 +1,50 @@
-use crate::{csv_provider::CsvRateProvider, rate_provider::{FxError, RateProvider}, static_provider::StaticRateProvider};
+use std::env;
 
-mod rate_provider;
+use crate::{
+    csv_provider::CsvRateProvider,
+    rate_provider::{FxError, RateProvider},
+    static_provider::StaticRateProvider,
+    conversion_history::ConversionHistory
+};
+
 mod csv_provider;
+mod rate_provider;
 mod static_provider;
+mod conversion_history;
 
 fn main() -> Result<(), FxError> {
     let provider = CsvRateProvider::from_csv("./data/rates.csv")?;
 
+    let args: Vec<String> = env::args().collect();
+
+    if args.len() != 4 {
+        eprintln!("Usage:");
+        eprintln!("  {} <base_currency> <quote_currency> <amount>", args[0]);
+        eprintln!("Example:");
+        eprintln!("  {} EUR USD 100.0", args[0]);
+        return Err(FxError::ParseError("Invalid arguments".to_string()));
+    }
 
 
-    let base = "EUR";
-    let quote = "USD";
-    let amount_str = "100.0";
 
-    let mut history = ConversionHistory {
-        queries: Vec::new()
-    };
+    let base = &args[1];
+    let quote = &args[2];
+    let amount_str = &args[3];
 
-
-    let amount: f64= match amount_str.parse() {
+    let mut history = ConversionHistory::from_csv("./data/history.csv")?;
+    let amount: f64 = match amount_str.parse() {
         Ok(am) => am,
         Err(_) => {
             eprintln!("Invalid amount entered: {amount_str}");
-            return Err(FxError::ParseError(format!("Invalid amount entered: {amount_str}")))
+            return Err(FxError::InvalidAmount(format!(
+                "Invalid amount entered: {amount_str}"
+            )));
         }
     };
 
     let converted = convert_fx(&provider, amount, base, quote);
+
+    
 
     match converted {
         Ok(result) => {
@@ -34,6 +52,7 @@ fn main() -> Result<(), FxError> {
             println!("Converting {amount} {base} -> {quote}");
             println!("Rate: {rate}");
             println!("Result: {result} {quote}");
+            history.add_to_csv(base, quote, &amount, &result)?;
             Ok(())
         }
         Err(FxError::PairNotFound(pair)) => {
@@ -50,24 +69,14 @@ fn main() -> Result<(), FxError> {
         }
         Err(FxError::ParseError(msg)) => {
             eprintln!("ParseError: {msg}");
-             Err(FxError::ParseError(msg))
+            Err(FxError::ParseError(msg))
         }
     }
-
-}
-
-struct ConversionHistory {
-    queries: Vec<(String, String, f64, f64)>,
 }
 
 
-fn convert_fx<P>(
-    provider: &P,
-    amount: f64,
-    base: &str,
-    quote: &str,
-) -> Result<f64, FxError> 
-where 
+fn convert_fx<P>(provider: &P, amount: f64, base: &str, quote: &str) -> Result<f64, FxError>
+where
     P: RateProvider,
 {
     let rate = provider.get_rate(base, quote)?;

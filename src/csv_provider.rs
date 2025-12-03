@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{ BufRead, BufReader };
 
 use crate::rate_provider::{FxError, RateProvider};
 
